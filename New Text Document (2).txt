@@ -1,0 +1,9 @@
+private static double getDouble(MapString, Object map, String key, double defaultValue) {
+    Object v = map.get(key);
+    return v instanceof Number  ((Number) v).doubleValue()  defaultValue;
+}
+
+private static int getInt(MapString, Object map, String key, int defaultValue) {
+    Object v = map.get(key);
+    return v instanceof Number  ((Number) v).intValue()  defaultValue;
+}
