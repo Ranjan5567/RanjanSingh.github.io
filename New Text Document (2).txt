@@ -1,9 +1,15 @@
-private static double getDouble(MapString, Object map, String key, double defaultValue) {
-    Object v = map.get(key);
-    return v instanceof Number  ((Number) v).doubleValue()  defaultValue;
+@SuppressWarnings("unchecked")
+Map<String, Object> categories =
+        (Map<String, Object>) usageData.get("categories");
+
+if (categories == null) {
+    categories = new HashMap<>();
+    usageData.put("categories", categories);
 }
 
-private static int getInt(MapString, Object map, String key, int defaultValue) {
-    Object v = map.get(key);
-    return v instanceof Number  ((Number) v).intValue()  defaultValue;
-}
+double currentCategoryTotal =
+        categories.get(category) instanceof Number
+                ? ((Number) categories.get(category)).doubleValue()
+                : 0.0;
+
+categories.put(category, currentCategoryTotal + amount);
