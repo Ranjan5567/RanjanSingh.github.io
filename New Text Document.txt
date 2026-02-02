@@ -1,0 +1,195 @@
+package com.mcp.server;
+
+import com.mcp.util.JsonUtil;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import java.util.stream.Stream;
+
+/**
+ * Manages credit-card resources as files under data/credit-card/.
+ * cards.json is treated as a single logical MCP resource.
+ */
+public class ResourceManager {
+
+    private static final String RESOURCE_PREFIX = "credit-card://";
+    private static final String CARDS_FILE_URI = "credit-card://cards";
+
+    private final Path dataRoot;
+
+    public ResourceManager() {
+        this.dataRoot = Paths.get("data", "credit-card").toAbsolutePath();
+    }
+
+    public ResourceManager(Path dataRoot) {
+        this.dataRoot = dataRoot.toAbsolutePath();
+    }
+
+    /* ===================== RESOURCE LIST ===================== */
+
+    public Map<String, Object> listResources(Map<String, Object> params) {
+
+        List<Map<String, Object>> resources = new ArrayList<>();
+
+        try {
+            if (Files.exists(dataRoot)) {
+                try (Stream<Path> walk = Files.walk(dataRoot)) {
+                    walk.filter(Files::isRegularFile)
+                        .filter(p -> p.toString().endsWith(".json"))
+                        .filter(p -> !p.getFileName().toString().equals("cards.json")) // 🔒 hide raw file
+                        .forEach(p -> {
+                            String relative = dataRoot.relativize(p)
+                                    .toString()
+                                    .replace("\\", "/")
+                                    .replace(".json", "");
+
+                            resources.add(Map.of(
+                                    "uri", RESOURCE_PREFIX + relative,
+                                    "name", relative,
+                                    "mimeType", "application/json"
+                            ));
+                        });
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to list resources", e);
+        }
+
+        // Expose cards as logical resource
+        resources.add(Map.of(
+                "uri", CARDS_FILE_URI,
+                "name", "cards",
+                "mimeType", "application/json"
+        ));
+
+        resources.sort(Comparator.comparing(r -> (String) r.get("uri")));
+
+        return Map.of("resources", resources);
+    }
+
+    /* ===================== READ RESOURCE ===================== */
+
+    public Map<String, Object> readResource(Map<String, Object> params) {
+
+        String uri = getString(params, "uri");
+        if (uri == null || !uri.startsWith(RESOURCE_PREFIX)) {
+            throw new IllegalArgumentException("Invalid or missing resource URI");
+        }
+
+        String relative = uri.substring(RESOURCE_PREFIX.length()).trim();
+        Path file = dataRoot.resolve(relative + ".json").normalize();
+
+        if (!file.startsWith(dataRoot)) {
+            throw new IllegalArgumentException("Invalid resource path");
+        }
+        if (!Files.exists(file)) {
+            throw new IllegalArgumentException("Resource not found: " + uri);
+        }
+
+        try {
+            String text = Files.readString(file, StandardCharsets.UTF_8);
+
+            return Map.of(
+                    "contents", List.of(
+                            Map.of(
+                                    "uri", uri,
+                                    "mimeType", "application/json",
+                                    "text", text
+                            )
+                    )
+            );
+
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read resource: " + uri, e);
+        }
+    }
+
+    /* ===================== UPDATE RESOURCE ===================== */
+
+    public synchronized Map<String, Object> updateResource(Map<String, Object> params) {
+
+        String uri = getString(params, "uri");
+        Object content = params.get("content");
+
+        if (uri == null || content == null) {
+            throw new IllegalArgumentException("Missing uri or content");
+        }
+        if (!uri.startsWith(RESOURCE_PREFIX)) {
+            throw new IllegalArgumentException("Invalid resource URI");
+        }
+
+        String relative = uri.substring(RESOURCE_PREFIX.length()).trim();
+        Path file = dataRoot.resolve(relative + ".json").normalize();
+
+        if (!file.startsWith(dataRoot)) {
+            throw new IllegalArgumentException("Invalid resource path");
+        }
+
+        try {
+            Files.createDirectories(file.getParent());
+
+            String json = (content instanceof String)
+                    ? (String) content
+                    : JsonUtil.toJson(content);
+
+            Files.writeString(
+                    file,
+                    json,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING
+            );
+
+            return Map.of(
+                    "uri", uri,
+                    "updated", true
+            );
+
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to update resource: " + uri, e);
+        }
+    }
+
+    /* ===================== CARDS FILE ===================== */
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> readCardsFile() {
+
+        Path cardsPath = dataRoot.resolve("cards.json");
+
+        // Auto-create on first run
+        if (!Files.exists(cardsPath)) {
+            writeCardsFile(Map.of("cards", new ArrayList<>()));
+        }
+
+        Map<String, Object> wrapper = readResource(Map.of(
+                "uri", CARDS_FILE_URI
+        ));
+
+        List<Map<String, Object>> contents =
+                (List<Map<String, Object>>) wrapper.get("contents");
+
+        if (contents == null || contents.isEmpty()) {
+            throw new IllegalArgumentException("cards.json is empty");
+        }
+
+        String text = (String) contents.get(0).get("text");
+        return JsonUtil.fromJson(text, Map.class);
+    }
+
+    public synchronized void writeCardsFile(Map<String, Object> cardsData) {
+        updateResource(Map.of(
+                "uri", CARDS_FILE_URI,
+                "content", cardsData
+        ));
+    }
+
+    /* ===================== HELPERS ===================== */
+
+    private static String getString(Map<String, Object> map, String key) {
+        Object v = map != null ? map.get(key) : null;
+        return v == null ? null : v.toString().trim();
+    }
+}
