@@ -1,0 +1,325 @@
+package com.mcp.tools;
+
+import com.mcp.server.ResourceManager;
+import com.mcp.util.JsonUtil;
+
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Credit card service implementing MCP tools.
+ * Cards are persisted in cards.json and validated before every operation.
+ */
+public class CreditCardService {
+
+    private static final String MISSING_PARAM = "Missing required parameter: ";
+    private final ResourceManager resourceManager = new ResourceManager();
+
+    /* ===================== TOOL 3 ===================== */
+
+    public Map<String, Object> checkBalance(Map<String, Object> params) {
+
+        String cardId = getString(params, "cardId");
+        Map<String, Object> card = loadAndValidateActiveCard(cardId);
+
+        return Map.of(
+                "cardId", card.get("cardId"),
+                "availableBalance", card.get("availableCredit"),
+                "currency", card.get("currency"),
+                "status", card.get("status")
+        );
+    }
+
+    /* ===================== TOOL 4 ===================== */
+
+    public Map<String, Object> getCardInfo(Map<String, Object> params) {
+
+        String cardId = getString(params, "cardId");
+        String last4 = last4(cardId);
+
+        Map<String, Object> cardsFile = resourceManager.readCardsFile();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> cards =
+                (List<Map<String, Object>>) cardsFile.get("cards");
+
+        Map<String, Object> card = findCard(cards, last4);
+
+        return Map.of(
+                "maskedNumber", card.get("cardId"),
+                "type", card.get("type"),
+                "status", card.get("status"),
+                "expiryMonth", card.get("expiryMonth"),
+                "expiryYear", card.get("expiryYear")
+        );
+    }
+
+    /* ===================== TOOL 5 ===================== */
+
+    public Map<String, Object> reportLostOrStolen(Map<String, Object> params) {
+
+        String cardId = getString(params, "cardId");
+        if (cardId == null) {
+            throw new IllegalArgumentException(MISSING_PARAM + "cardId");
+        }
+
+        String reason = getString(params, "reason");
+        if (!"LOST".equalsIgnoreCase(reason) && !"STOLEN".equalsIgnoreCase(reason)) {
+            reason = "LOST";
+        }
+
+        String last4 = last4(cardId);
+
+        Map<String, Object> cardsFile = resourceManager.readCardsFile();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> cards =
+                (List<Map<String, Object>>) cardsFile.get("cards");
+
+        Map<String, Object> card = findCard(cards, last4);
+
+        card.put("status", "BLOCKED");
+        card.put("blockedReason", reason.toUpperCase());
+        card.put("availableCredit", 0);
+
+        resourceManager.writeCardsFile(cardsFile);
+
+        return Map.of(
+                "cardId", "****" + last4,
+                "status", "BLOCKED",
+                "message", "Card blocked and updated successfully"
+        );
+    }
+
+    /* ===================== TOOL 6 ===================== */
+
+    public Map<String, Object> getTransactionHistory(Map<String, Object> params) {
+
+        String cardId = getString(params, "cardId");
+        loadAndValidateActiveCard(cardId);
+
+        int limit = 5;
+        Object limitObj = params.get("limit");
+        if (limitObj instanceof Number) {
+            limit = Math.max(1, Math.min(((Number) limitObj).intValue(), 20));
+        }
+
+        List<Map<String, Object>> txs = new ArrayList<>();
+        String[] merchants = {"Amazon", "Netflix", "Starbucks", "Shell", "Walmart"};
+        double[] amounts = {29.99, 15.99, 5.50, 45.00, 78.25};
+
+        for (int i = 0; i < limit && i < merchants.length; i++) {
+            txs.add(Map.of(
+                    "id", "tx-" + (1000 + i),
+                    "merchant", merchants[i],
+                    "amount", amounts[i],
+                    "currency", "USD",
+                    "date", "2025-01-" + String.format("%02d", 28 - i),
+                    "status", "POSTED"
+            ));
+        }
+
+        return Map.of(
+                "transactions", txs,
+                "count", txs.size()
+        );
+    }
+
+    /* ===================== TOOL 7 ===================== */
+
+    public Map<String, Object> requestCreditLimitIncrease(Map<String, Object> params) {
+
+        String cardId = getString(params, "cardId");
+        loadAndValidateActiveCard(cardId);
+
+        Object limitObj = params.get("requestedLimit");
+        if (!(limitObj instanceof Number)) {
+            throw new IllegalArgumentException(MISSING_PARAM + "requestedLimit");
+        }
+
+        double requestedLimit = ((Number) limitObj).doubleValue();
+        double annualIncome = params.get("annualIncome") instanceof Number
+                ? ((Number) params.get("annualIncome")).doubleValue()
+                : 75000.0;
+
+        boolean approved = requestedLimit <= 25000 &&
+                requestedLimit <= annualIncome / 3;
+
+        return Map.of(
+                "cardId", "****" + last4(cardId),
+                "requestedLimit", requestedLimit,
+                "approved", approved,
+                "newLimit", approved ? requestedLimit : null
+        );
+    }
+
+    /* ===================== MAKE TRANSACTION ===================== */
+
+    public Map<String, Object> makeTransaction(Map<String, Object> params) {
+
+        String cardId = getString(params, "cardId");
+        if (cardId == null) {
+            throw new IllegalArgumentException(MISSING_PARAM + "cardId");
+        }
+
+        Object amountObj = params.get("amount");
+        if (!(amountObj instanceof Number)) {
+            throw new IllegalArgumentException("Missing or invalid parameter: amount");
+        }
+
+        double amount = ((Number) amountObj).doubleValue();
+        if (amount <= 0) {
+            throw new IllegalArgumentException("Amount must be greater than zero");
+        }
+
+        String merchant = getString(params, "merchant");
+        String category = getString(params, "category");
+        String currency = getString(params, "currency");
+        if (currency == null) currency = "USD";
+
+        Map<String, Object> card = loadAndValidateActiveCard(cardId);
+        double availableCredit = ((Number) card.get("availableCredit")).doubleValue();
+
+        if (amount > availableCredit) {
+            throw new IllegalStateException("Insufficient available credit");
+        }
+
+        String last4 = last4(cardId);
+
+        /* -------- limits.json -------- */
+        Map<String, Object> limitsData =
+                readJsonResource("credit-card://limits");
+        limitsData.put("availableCredit", availableCredit - amount);
+        resourceManager.updateResource(Map.of(
+                "uri", "credit-card://limits",
+                "content", limitsData
+        ));
+
+        /* -------- usage.json -------- */
+        Map<String, Object> usageData =
+                readJsonResource("credit-card://usage");
+
+        usageData.put(
+                "totalSpent",
+                ((Number) usageData.get("totalSpent")).doubleValue() + amount
+        );
+        usageData.put(
+                "transactionCount",
+                ((Number) usageData.get("transactionCount")).intValue() + 1
+        );
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> categories =
+                (Map<String, Object>) usageData.get("categories");
+
+        categories.put(
+                category,
+                ((Number) categories.getOrDefault(category, 0)).doubleValue() + amount
+        );
+
+        resourceManager.updateResource(Map.of(
+                "uri", "credit-card://usage",
+                "content", usageData
+        ));
+
+        /* -------- statements/YYYY-MM.json -------- */
+        String period = (String) usageData.get("period");
+        String statementUri = "credit-card://statements/" + period;
+
+        Map<String, Object> statementData;
+        try {
+            statementData = readJsonResource(statementUri);
+        } catch (Exception e) {
+            statementData = Map.of("transactions", new ArrayList<>());
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> txs =
+                (List<Map<String, Object>>) statementData
+                        .getOrDefault("transactions", new ArrayList<>());
+
+        txs.add(Map.of(
+                "id", "tx-" + System.currentTimeMillis(),
+                "cardId", "****" + last4,
+                "merchant", merchant,
+                "amount", amount,
+                "currency", currency,
+                "category", category,
+                "date", LocalDate.now().toString(),
+                "status", "POSTED"
+        ));
+
+        resourceManager.updateResource(Map.of(
+                "uri", statementUri,
+                "content", Map.of("transactions", txs)
+        ));
+
+        return Map.of(
+                "cardId", "****" + last4,
+                "amount", amount,
+                "currency", currency,
+                "merchant", merchant,
+                "category", category,
+                "remainingCredit", availableCredit - amount,
+                "status", "SUCCESS"
+        );
+    }
+
+    /* ===================== HELPERS ===================== */
+
+    private static String getString(Map<String, Object> map, String key) {
+        Object v = map != null ? map.get(key) : null;
+        return v == null ? null : v.toString().trim();
+    }
+
+    private static String last4(String cardId) {
+        String digits = cardId.replaceAll("\\D", "");
+        if (digits.length() < 4) throw new IllegalArgumentException("Invalid cardId");
+        return digits.substring(digits.length() - 4);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> findCard(List<Map<String, Object>> cards, String last4) {
+        return cards.stream()
+                .filter(c -> ((String) c.get("cardId")).endsWith(last4))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Card not found"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> loadAndValidateActiveCard(String cardId) {
+
+        String last4 = last4(cardId);
+
+        Map<String, Object> cardsFile = resourceManager.readCardsFile();
+        List<Map<String, Object>> cards =
+                (List<Map<String, Object>>) cardsFile.get("cards");
+
+        Map<String, Object> card = findCard(cards, last4);
+
+        if ("BLOCKED".equalsIgnoreCase((String) card.get("status"))) {
+            throw new IllegalStateException(
+                    "Card ****" + last4 + " is BLOCKED. Operation not allowed."
+            );
+        }
+
+        return card;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readJsonResource(String uri) {
+
+        Map<String, Object> wrapper =
+                resourceManager.readResource(Map.of("uri", uri));
+
+        List<Map<String, Object>> contents =
+                (List<Map<String, Object>>) wrapper.get("contents");
+
+        if (contents == null || contents.isEmpty()) {
+            throw new IllegalStateException("Empty resource: " + uri);
+        }
+
+        String text = (String) contents.get(0).get("text");
+        return JsonUtil.fromJson(text, Map.class);
+    }
+}
