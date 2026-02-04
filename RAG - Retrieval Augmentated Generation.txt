@@ -1,0 +1,263 @@
+﻿RAG - Retrieval Augmentated Generation 
+
+
+RAG helps LLMs give better answers by combining what they already know with new or organization-specific information.
+* The knowledge the AI already has from training is called internal world data.
+* The new or organization-specific information it retrieves from outside sources is called external world data.
+It checks relevant documents to provide more accurate and current responses.
+
+
+There are three ways to customize an LLM and provide it with organization-specific knowledge:
+1. Fine-Tuning: Retrain the model on company data so the knowledge is stored inside the model.
+
+2. RAG (Retrieval-Augmented Generation): Keep the knowledge outside the model and let it retrieve relevant information when needed.
+
+3. Prompting / Context Injection: Provide extra information or instructions in the prompt itself so the model can use it when generating answers, without retraining.
+Fine-tuning and prompting face problems like outdated knowledge, increased model size, and limited context, which can lead to inaccurate or incomplete answers.
+RAG avoids these issues by keeping knowledge outside the model and retrieving relevant documents on demand.
+
+
+Challenges RAG fixes 
+
+
+Problem 
+	Fixes
+
+
+	Hallucinations(Making up answers or incorrect information)
+	Model uses real documents to answer questions and cites sources, only answering when enough information is available.
+	Knowledge silos( Information is scattered across multiple systems and hard to access)
+	RAG retrieves relevant data from all sources and provides a unified answer
+	
+
+
+
+
+
+How does Rag works?
+
+
+  
+
+ four main components of RAG : - 
+
+
+   1. Extraction - Getting data ready and storing it in searchable format 
+   * Enterprise data is collected.It can either be batched or streaming
+   * Data is cleaned and transformed.Documents are converted into raw text 
+   * Content is broken into chunks (paragraphs,sentences or tokens).The process is called chunking 
+   * Generate vector embeddings for each chunk using embedding model
+   * Load into vector database.in case of dynamic data real time ingestion strategies followed-incremental updates,streaming pipeline
+   2. Retrieval - 
+   *  The user submits a query.Convert the query into a vector embedding.
+
+   * Perform a search and Rank the retrieved chunks by relevance using a scoring model.
+
+Reranking – an extra step to improve accuracy by comparing top results more carefully and putting the most useful information first.
+
+
+
+
+
+
+      3. Augmentation – Preparing the query for the AI
+
+         * Combine the user’s query with the retrieved content.
+
+         * Add any additional instructions for the AI.
+
+         * Send this combined input to the language model.
+
+            4. Generation – Producing the final response
+
+               * The language model generates an answer based on the provided context.
+
+
+
+
+
+
+Lets understand the processes involved in extraction layer a quiet deep 
+
+
+Data preparation stage 
+
+
+
+
+Data collection -
+
+
+Data transformation - Preparing data for AI ensures that raw information can be easily read, searched, and used to provide accurate answers.
+Metadata is preserved which can later be used to filter, rank, or retrieve chunks.
+Different file format need different parsing strategies 
+
+
+File format
+	
+
+	Text based 
+	Directly extract text
+	web/markup 
+	Extract main text
+	Images with text
+	ocr
+	Images Without text
+	CV model to generate vector embedding(chunking optional for large/complex image)
+	
+
+
+
+Chunking -  Large language models (LLMs) can only handle a limited amount of text at once. If you give them too much information at once, they can get confused or miss important details, leading to incomplete or wrong answers.
+Chunking means breaking up documents into smaller, bite-sized pieces — like paragraphs or sentences. This helps the system:
+               * Quickly locate the part of the text that actually answers the question.
+
+               * Avoid confusion from irrelevant or extra information.
+
+               * Give more accurate and reliable answers, because even the best search can fail if the data is too long or poorly organized.
+
+
+
+
+
+
+How to do Chunking 
+1. Split the text
+ Take a long document and break it into smaller sections, like paragraphs or a few sentences. This makes it easier for the AI to read and understand without getting overwhelmed.
+2. Keep some overlap
+ Include a little overlap between sections so important context isn’t lost at the edges.
+3. Label and store
+ Each piece is labeled and saved with metadata (like a title or ID) so it can be easily found later.
+________________
+
+
+Vector Embeddings – Turning Text into Meaning
+A vector embedding is a way to turn text into numbers that represent its meaning, not just the exact words. This allows the system to find content that’s relevant to your question, even if the wording is different.
+                  * The closer two vectors are, the more similar their meanings.
+
+                  * How it works: The model reads each chunk and creates a vector — a list of numbers — that captures what the text is about.
+
+________________
+
+
+Loading Vectors into a Database
+Once all the chunks are turned into vectors, they are stored in a vector database.
+                     * The database builds an index to make searches fast and accurate.
+
+                     * When a user asks a question, the system can quickly find the chunks that are most similar in meaning.
+
+
+________________
+
+
+RAG – Retrieval-Augmented Generation Explained Simply
+RAG helps AI give better answers by combining what it already knows with new, up-to-date, or organization-specific information.
+                        * Internal knowledge: What the AI already learned during training.
+
+                        * External knowledge: New or company-specific information that the AI can look up when needed.
+
+This means the AI can give more accurate and current answers, instead of guessing or relying only on its built-in knowledge.
+________________
+
+
+Three ways to customize AI for your organization
+                           1. Fine-Tuning: Retrain the AI on company data so it “remembers” it internally.
+
+                           2. Prompting / Context Injection: Give extra information in the question itself so the AI can use it.
+
+                           3. RAG: Keep the knowledge outside the AI and let it fetch relevant information on demand.
+
+Why RAG is often better:
+                              * Avoids outdated knowledge.
+
+                              * Doesn’t make the AI bigger or slower.
+
+                              * Can pull from multiple sources without missing important info.
+
+________________
+
+
+Problems RAG Solves
+Problem
+	How RAG Fixes It
+	Hallucinations (AI making up answers)
+	AI uses real documents to answer and cites sources. It only answers when there’s enough info.
+	Knowledge silos (info scattered across systems)
+	AI can pull relevant data from all sources and combine it into one answer.
+	________________
+
+
+How RAG Works: Step by Step
+RAG has four main steps: Extraction → Retrieval → Augmentation → Generation
+________________
+
+
+1. Extraction – Getting your data ready
+Data collection: Gather company data from all sources (documents, web pages, images, etc.).
+Data transformation: Convert everything into readable text. Make sure it can be easily searched and used to give accurate answers. Preserve extra information (metadata) like titles, dates, or categories, which helps later when filtering or ranking answers.
+Handling different file types:
+File Type
+	How it’s handled
+	Text files
+	Directly extract the text
+	Web pages / markup
+	Extract the main content only
+	Images with text
+	Use OCR (optical character recognition) to read the text
+	Images without text
+	Use a computer vision model to generate a “digital fingerprint” (vector embedding). Chunking is optional for very large or complex images
+	Chunking – Breaking data into bite-sized pieces
+ AI can only process a limited amount of text at a time. Giving it too much can cause it to miss details or get confused. Chunking splits documents into smaller sections (paragraphs or sentences), helping the AI:
+                                 * Quickly locate the part of the text that answers the question.
+
+                                 * Avoid confusion from irrelevant information.
+
+                                 * Provide more accurate and reliable answers.
+
+How to do chunking:
+                                    1. Split the text: Break long documents into smaller sections.
+
+                                    2. Keep some overlap: Include a little repeated context at the edges so nothing important is lost.
+
+                                    3. Label and store: Save each chunk with metadata like a title or ID so it’s easy to retrieve later.
+
+Vector Embeddings – Turning text into meaning
+                                       * Each chunk is turned into a vector embedding, a list of numbers representing the meaning of the text (not just the words).
+
+                                       * Similar chunks will have similar vectors, so the AI can match questions with relevant content even if the wording is different.
+
+                                       * These vectors are stored in a vector database, which builds an index for fast and accurate searching.
+
+________________
+
+
+2. Retrieval – Finding the right info
+                                          * The user asks a question.
+
+                                          * The AI turns the question into a vector embedding (a digital fingerprint).
+
+                                          * The system searches the database for chunks with similar vectors and ranks them by relevance.
+
+________________
+
+
+3. Augmentation – Preparing the question
+                                             * Combine the user’s question with the retrieved information.
+
+                                             * Add any extra instructions for the AI.
+
+________________
+
+
+4. Generation – Giving the answer
+                                                * The AI generates a final response based on the combined context.
+
+                                                * Because it has access to up-to-date, relevant information, the answer is more accurate and complete.
+
+________________
+
+
+Why chunking and vectors matter
+                                                   * Chunking ensures the AI can focus on the right information without getting overwhelmed.
+
+                                                   * Vector embeddings allow the AI to find meaning, not just matching words. This helps it answer questions even when phrased differently than the documents.
